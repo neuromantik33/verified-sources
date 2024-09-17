@@ -1,0 +1,2 @@
+class NoMessageException(Exception):
+    pass
