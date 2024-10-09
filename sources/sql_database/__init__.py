@@ -2,7 +2,7 @@
 
 from typing import Callable, Dict, List, Optional, Union, Iterable, Any
 from sqlalchemy import MetaData, Table
-from sqlalchemy.engine import Engine, Connection
+from sqlalchemy.engine import Engine
 
 import dlt
 from dlt.sources import DltResource
@@ -19,7 +19,6 @@ from .helpers import (
     SqlTableResourceConfiguration,
     _detect_precision_hints_deprecated,
     TQueryAdapter,
-    TConnectionInitializer,
 )
 from .schema_types import (
     default_table_adapter,
@@ -46,7 +45,6 @@ def sql_database(
     include_views: bool = False,
     type_adapter_callback: Optional[TTypeAdapter] = None,
     query_adapter_callback: Optional[TQueryAdapter] = None,
-    conn_init_callback: Optional[TConnectionInitializer] = None,
 ) -> Iterable[DltResource]:
     """
     A dlt source which loads data from an SQL database using SQLAlchemy.
@@ -77,8 +75,6 @@ def sql_database(
             Argument is a single sqlalchemy data type (`TypeEngine` instance) and it should return another sqlalchemy data type, or `None` (type will be inferred from data)
         query_adapter_callback(Optional[Callable[Select, Table], Select]): Callable to override the SELECT query used to fetch data from the table.
             The callback receives the sqlalchemy `Select` and corresponding `Table` objects and should return the modified `Select`.
-        conn_init_callback(Callable[[Connection], Connection]): Callable to customize the sqlalchemy `Connection`.
-            The callback receives the sqlalchemy `Connection` object and should return the configured `Connection`.
 
     Returns:
         Iterable[DltResource]: A list of DLT resources for each table to be loaded.
@@ -122,7 +118,6 @@ def sql_database(
             backend_kwargs=backend_kwargs,
             type_adapter_callback=type_adapter_callback,
             query_adapter_callback=query_adapter_callback,
-            conn_init_callback=conn_init_callback,
         )
 
 
@@ -145,7 +140,6 @@ def sql_table(
     type_adapter_callback: Optional[TTypeAdapter] = None,
     included_columns: Optional[List[str]] = None,
     query_adapter_callback: Optional[TQueryAdapter] = None,
-    conn_init_callback: Optional[TConnectionInitializer] = None,
 ) -> DltResource:
     """
     A dlt resource which loads data from an SQL database table using SQLAlchemy.
@@ -177,8 +171,6 @@ def sql_table(
         included_columns (Optional[List[str]): List of column names to select from the table. If not provided, all columns are loaded.
         query_adapter_callback(Optional[Callable[Select, Table], Select]): Callable to override the SELECT query used to fetch data from the table.
             The callback receives the sqlalchemy `Select` and corresponding `Table` objects and should return the modified `Select`.
-        conn_init_callback(Callable[[Connection], Connection]): Callable to customize the sqlalchemy `Connection`.
-            The callback receives the sqlalchemy `Connection` object and should return the configured `Connection`.
 
     Returns:
         DltResource: The dlt resource for loading data from the SQL database table.
@@ -220,5 +212,4 @@ def sql_table(
         type_adapter_callback=type_adapter_callback,
         included_columns=included_columns,
         query_adapter_callback=query_adapter_callback,
-        conn_init_callback=conn_init_callback,
     )

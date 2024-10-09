@@ -33,13 +33,12 @@ from .schema_types import (
 )
 
 from sqlalchemy import Table, create_engine, select
-from sqlalchemy.engine import Engine, Connection
+from sqlalchemy.engine import Engine
 from sqlalchemy.exc import CompileError
 
 
 TableBackend = Literal["sqlalchemy", "pyarrow", "pandas", "connectorx"]
 TQueryAdapter = Callable[[SelectAny, Table], SelectAny]
-TConnectionInitializer = Callable[[Connection], Connection]
 
 
 class TableLoader:
@@ -52,7 +51,6 @@ class TableLoader:
         chunk_size: int = 1000,
         incremental: Optional[dlt.sources.incremental[Any]] = None,
         query_adapter_callback: Optional[TQueryAdapter] = None,
-        conn_init_callback: Optional[TConnectionInitializer] = None,
     ) -> None:
         self.engine = engine
         self.backend = backend
@@ -60,7 +58,6 @@ class TableLoader:
         self.columns = columns
         self.chunk_size = chunk_size
         self.query_adapter_callback = query_adapter_callback
-        self.conn_init_callback = conn_init_callback
         self.incremental = incremental
         if incremental:
             try:
@@ -133,8 +130,6 @@ class TableLoader:
 
     def _load_rows(self, query: SelectAny, backend_kwargs: Dict[str, Any]) -> TDataItem:
         with self.engine.connect() as conn:
-            if self.conn_init_callback:
-                conn = self.conn_init_callback(conn)
             result = conn.execution_options(yield_per=self.chunk_size).execute(query)
             # NOTE: cursor returns not normalized column names! may be quite useful in case of Oracle dialect
             # that normalizes columns
@@ -204,7 +199,6 @@ def table_rows(
     type_adapter_callback: Optional[TTypeAdapter] = None,
     included_columns: Optional[List[str]] = None,
     query_adapter_callback: Optional[TQueryAdapter] = None,
-    conn_init_callback: Optional[TConnectionInitializer] = None,
 ) -> Iterator[TDataItem]:
     columns: TTableSchemaColumns = None
     if defer_table_reflect:
@@ -242,7 +236,6 @@ def table_rows(
         incremental=incremental,
         chunk_size=chunk_size,
         query_adapter_callback=query_adapter_callback,
-        conn_init_callback=conn_init_callback,
     )
     try:
         yield from loader.load_rows(backend_kwargs)
