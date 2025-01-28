@@ -143,10 +143,6 @@ def _to_dlt_column_schema(
     # Set nullable attribute if type_info is available
     if type_info:
         column_schema["nullable"] = type_info.value_optional
-    # If the type_info is None then it must be a DELETE message, so any fields
-    # which are present should be NOT NULL (i.e. primary key fields)
-    elif (attr := _get_datum_attr(datum)) and getattr(datum, attr) is not None:
-        column_schema["nullable"] = False
 
     return column_schema
 

@@ -434,12 +434,7 @@ TABLE_SCHEMAS: List[TTableSchema] = [
     {
         "name": "tbl_x",
         "columns": {
-            "id_x": {
-                "data_type": "bigint",
-                "name": "id_x",
-                "precision": 64,
-                "nullable": False,
-            },
+            "id_x": {"data_type": "bigint", "name": "id_x", "precision": 64},
             "val_x": {"data_type": "text", "name": "val_x"},
             "col_bool": {"data_type": "bool", "name": "col_bool"},
             "col_bytea": {"data_type": "binary", "name": "col_bytea"},
