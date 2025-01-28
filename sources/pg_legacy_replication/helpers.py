@@ -569,7 +569,7 @@ def gen_data_item(
         col_name = _actual_column_name(data)
         if not included_columns or col_name in included_columns:
             data_item[col_name] = _to_dlt_val(
-                data, column_schema[col_name]["data_type"], for_delete=is_delete
+                data, column_schema[col_name], for_delete=is_delete
             )
 
     return data_item

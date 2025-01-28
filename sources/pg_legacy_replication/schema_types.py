@@ -172,12 +172,17 @@ data_type_handlers: Dict[TDataType, Callable[[Any], Any]] = {
 
 
 def _to_dlt_val(
-    val: DatumMessage, data_type: TDataType, *, for_delete: bool = False
+    val: DatumMessage, col_schema: TColumnSchema, *, for_delete: bool = False
 ) -> Any:
     """Converts decoderbuf's datum value into dlt-compatible data value."""
+    data_type = col_schema["data_type"]
+    assert data_type is not None
     datum = _get_datum_attr(val)
     if datum is None:
-        return _DUMMY_VALS[data_type] if for_delete else None
+        nullable = col_schema.get("nullable", False)
+        if for_delete and not nullable:
+            return _DUMMY_VALS[data_type]
+        return None
 
     raw_value = getattr(val, datum)
     if data_type in data_type_handlers:
