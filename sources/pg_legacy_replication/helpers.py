@@ -506,7 +506,7 @@ def infer_table_schema(
         )
         for i, col in enumerate(tuples)
         if (col_name := _actual_column_name(col))
-           and (not included_columns or col_name in included_columns)
+        and (not included_columns or col_name in included_columns)
     }
 
     # Add replication columns
