@@ -601,19 +601,18 @@ def compare_schemas(last: TTableSchema, new: TTableSchema) -> TTableSchema:
     precise one if they are relatively equal or else raises a
     AssertionError due to an incompatible schema change
     """
-    table_name = last["name"]
-    assert table_name == new["name"], "Table names do not match"
+    assert last["name"] == new["name"], "Table names do not match"
 
-    table_schema = TTableSchema(name=table_name, columns={})
+    table_schema = TTableSchema(name=last["name"], columns={})
     last_cols, new_cols = last["columns"], new["columns"]
     assert len(last_cols) == len(
         new_cols
-    ), f"Columns mismatch last:{last['columns']} new:{new['columns']}"
+    ), f"Columns mismatch last:{last_cols} new:{new_cols}"
 
     for name, s1 in last_cols.items():
         s2 = new_cols.get(name)
         assert (
-            s2 is not None and s1["data_type"] == s2["data_type"]
+            s2 and s1["data_type"] == s2["data_type"]
         ), f"Incompatible schema for column '{name}'"
 
         # Ensure new has no fields outside allowed fields
