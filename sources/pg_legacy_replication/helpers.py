@@ -506,7 +506,7 @@ def infer_table_schema(
         )
         for i, col in enumerate(tuples)
         if (col_name := _actual_column_name(col))
-        and (not included_columns or col_name in included_columns)
+           and (not included_columns or col_name in included_columns)
     }
 
     # Add replication columns
@@ -623,7 +623,13 @@ def compare_schemas(last: TTableSchema, new: TTableSchema) -> TTableSchema:
         # Select the more precise schema by comparing nullable, precision, and scale
         col_schema = TColumnSchema(name=name, data_type=s1["data_type"])
         if "nullable" in s1 or "nullable" in s2:
-            col_schema["nullable"] = s1.get("nullable", s2.get("nullable"))
+            # Get nullable values (could be True, False, or None)
+            s1_null = s1.get("nullable")
+            s2_null = s2.get("nullable")
+            if s1_null is not None and s2_null is not None:
+                col_schema["nullable"] = s1_null or s2_null  # Default is True
+            else:
+                col_schema["nullable"] = s1_null if s1_null is not None else s2_null
         if "precision" in s1 or "precision" in s2:
             col_schema["precision"] = s1.get("precision", s2.get("precision"))
         if "scale" in s1 or "scale" in s2:
