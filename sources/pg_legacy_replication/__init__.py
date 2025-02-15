@@ -94,7 +94,7 @@ def replication_source(
             advance_slot(start_lsn, slot_name, credentials)
 
         # continue until last message in replication slot
-        upto_lsn = get_max_lsn(credentials)
+        upto_lsn = get_max_lsn(slot_name, credentials)
         if upto_lsn is None:
             return
 

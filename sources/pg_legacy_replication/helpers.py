@@ -153,7 +153,9 @@ def drop_replication_slot(name: str, cur: ReplicationCursor) -> None:
         )
 
 
-def get_max_lsn(credentials: ConnectionStringCredentials) -> Optional[int]:
+def get_max_lsn(
+    slot_name: str, credentials: ConnectionStringCredentials
+) -> Optional[int]:
     """
     Returns maximum Log Sequence Number (LSN).
 
@@ -162,13 +164,11 @@ def get_max_lsn(credentials: ConnectionStringCredentials) -> Optional[int]:
     """
     cur = _get_conn(credentials).cursor()
     try:
-        loc_fn = (
-            "pg_current_xlog_location"
-            if get_pg_version(cur) < 100000
-            else "pg_current_wal_lsn"
+        lsn_field = "location" if get_pg_version(cur) < 100000 else "lsn"
+        cur.execute(
+            f"SELECT MAX({lsn_field} - '0/0') AS max_lsn "  # subtract '0/0' to convert pg_lsn type to int (https://stackoverflow.com/a/73738472)
+            f"FROM pg_logical_slot_peek_binary_changes('{slot_name}', NULL, NULL);"
         )
-        # subtract '0/0' to convert pg_lsn type to int (https://stackoverflow.com/a/73738472)
-        cur.execute(f"SELECT {loc_fn}() - '0/0' as max_lsn;")
         lsn: int = cur.fetchone()[0]
         return lsn
     finally:

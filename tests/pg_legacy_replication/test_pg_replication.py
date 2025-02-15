@@ -413,7 +413,7 @@ def test_unmapped_data_types(
     # insert record in source table to create replication item
     with src_pl.sql_client() as c:
         c.execute_sql(
-            "INSERT INTO data_types VALUES (B'1', box '((1,1), (0,0))', gen_random_uuid());"
+            "INSERT INTO data_types VALUES (B'1', box '((1,1), (0,0))', uuid_generate_v4());"
         )
 
     # run destination pipeline and assert resulting data types
