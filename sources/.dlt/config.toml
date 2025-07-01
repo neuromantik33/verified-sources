@@ -4,7 +4,7 @@
 # buffer_max_items=100
 
 [runtime]
-log_level="INFO"
+log_level="WARNING"
 
 ### Destinations
 
