@@ -1,6 +1,6 @@
 import hashlib
 from collections import defaultdict
-from contextlib import closing
+from contextlib import closing, contextmanager
 from dataclasses import dataclass, field
 from functools import partial
 from typing import (
@@ -99,11 +99,11 @@ def configure_engine(
         if snapshot_name is None:
             # Using the same isolation level that pg_backup uses
             cur.execute(
-                "SET TRANSACTION ISOLATION LEVEL SERIALIZABLE, READ ONLY, DEFERRABLE"
+                "SET TRANSACTION ISOLATION LEVEL SERIALIZABLE, READ ONLY, DEFERRABLE;"
             )
         else:
-            cur.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
-            cur.execute(f"SET TRANSACTION SNAPSHOT '{snapshot_name}'")
+            cur.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ;")
+            cur.execute("SET TRANSACTION SNAPSHOT %s;", (snapshot_name,))
 
     @sa.event.listens_for(engine, "engine_disposed")
     def on_engine_disposed(e: Engine) -> None:
@@ -165,22 +165,21 @@ def get_max_lsn(
     Returns None if the replication slot is empty.
     Does not consume the slot, i.e. messages are not flushed.
     """
-    with closing(_get_conn(credentials)) as conn:
-        with conn.cursor() as cur:
-            pg_version = get_pg_version(cur)
-            lsn_field = "lsn" if pg_version >= 100000 else "location"
-            # subtract '0/0' to convert pg_lsn type to int (https://stackoverflow.com/a/73738472)
-            cur.execute(
-                f"""
-                SELECT {lsn_field} - '0/0' AS max_lsn
-                FROM pg_logical_slot_peek_binary_changes(%s, NULL, NULL)
-                ORDER BY {lsn_field} DESC
-                LIMIT 1;
-                """,
-                (slot_name,),
-            )
-            row = cur.fetchone()
-            return row[0] if row else None  # type: ignore[no-any-return]
+    with _get_cursor(credentials) as cur:
+        pg_version = get_pg_version(cur)
+        lsn_field = "lsn" if pg_version >= 100000 else "location"
+        # subtract '0/0' to convert pg_lsn type to int (https://stackoverflow.com/a/73738472)
+        cur.execute(
+            f"""
+            SELECT {lsn_field} - '0/0' AS max_lsn
+            FROM pg_logical_slot_peek_binary_changes(%s, NULL, NULL)
+            ORDER BY {lsn_field} DESC
+            LIMIT 1;
+            """,
+            (slot_name,),
+        )
+        row = cur.fetchone()
+        return row[0] if row else None  # type: ignore[no-any-return]
 
 
 def lsn_int_to_hex(lsn: int) -> str:
@@ -202,13 +201,13 @@ def advance_slot(
     the behavior of that method seems odd when used outside of `consume_stream`.
     """
     assert upto_lsn > 0
-    with closing(_get_conn(credentials)) as conn:
-        with conn.cursor() as cur:
-            # There is unfortunately no way in pg9.6 to manually advance the replication slot
-            if get_pg_version(cur) > 100000:
-                cur.execute(
-                    f"SELECT * FROM pg_replication_slot_advance('{slot_name}', '{lsn_int_to_hex(upto_lsn)}');"
-                )
+    with _get_cursor(credentials) as cur:
+        # There is unfortunately no way in pg9.6 to manually advance the replication slot
+        if get_pg_version(cur) > 100000:
+            cur.execute(
+                "SELECT * FROM pg_replication_slot_advance(%s, %s);",
+                (slot_name, lsn_int_to_hex(upto_lsn)),
+            )
 
 
 def _get_conn(
@@ -225,6 +224,17 @@ def _get_conn(
         connection_factory=connection_factory,
         **({} if credentials.query is None else credentials.query),
     )
+
+
+@contextmanager
+def _get_cursor(
+    credentials: ConnectionStringCredentials,
+    connection_factory: Optional[Any] = None,
+) -> Iterator[cursor]:
+    """Returns a psycopg2 cursor to interact with postgres."""
+    with closing(_get_conn(credentials, connection_factory)) as conn:
+        with conn.cursor() as cur:
+            yield cur
 
 
 def get_rep_conn(
@@ -435,27 +445,29 @@ class ItemGenerator:
         Maintains LSN of last consumed commit message in object state.
         Advances the slot only when all messages have been consumed.
         """
-        with closing(get_rep_conn(self.credentials)) as rep_conn:
-            with rep_conn.cursor() as rep_cur:
-                try:
-                    consumer = MessageConsumer(
-                        credentials=self.credentials,
-                        upto_lsn=self.upto_lsn,
-                        table_qnames=self.table_qnames,
-                        repl_options=self.repl_options,
-                        target_batch_size=self.target_batch_size,
-                    )
-                    rep_cur.start_replication(self.slot_name, start_lsn=self.start_lsn)
-                    rep_cur.consume_stream(consumer, self.keepalive_interval)
-                except StopReplication:  # completed batch or reached `upto_lsn`
-                    yield from self.flush_batch(rep_cur, consumer)
-                finally:
-                    logger.debug(
-                        "Closing connection... last_commit_lsn: %s, generated_all: %s, feedback_ts: %s",
-                        self.last_commit_lsn,
-                        self.generated_all,
-                        rep_cur.feedback_timestamp,
-                    )
+        rep_conn = get_rep_conn(self.credentials)
+        with closing(rep_conn), rep_conn.cursor() as rep_cur:
+            try:
+                consumer = MessageConsumer(
+                    credentials=self.credentials,
+                    upto_lsn=self.upto_lsn,
+                    table_qnames=self.table_qnames,
+                    repl_options=self.repl_options,
+                    target_batch_size=self.target_batch_size,
+                )
+                rep_cur.start_replication(self.slot_name, start_lsn=self.start_lsn)
+                rep_cur.consume_stream(consumer, self.keepalive_interval)
+            except StopReplication:  # completed batch or reached `upto_lsn`
+                yield from self.flush_batch(rep_cur, consumer)
+            finally:
+                logger.debug(
+                    "Closing connection... last_commit_lsn: %s, generated_all: %s, feedback_ts: %s",
+                    self.last_commit_lsn,
+                    self.generated_all,
+                    rep_cur.feedback_timestamp,
+                )
+        assert rep_conn.closed, "Connection is still open!"
+        self.terminate_backend_if_needed()
 
     def flush_batch(
         self, cur: ReplicationCursor, consumer: MessageConsumer
@@ -476,6 +488,45 @@ class ItemGenerator:
             cur.send_feedback(write_lsn=last_commit_lsn, reply=True, force=True)
         self.last_commit_lsn = last_commit_lsn
         self.generated_all = consumed_all
+
+    def terminate_backend_if_needed(self) -> None:
+        def find_active_pid_for_slot() -> Optional[int]:
+            with _get_cursor(self.credentials) as cur:
+                cur.execute(
+                    """
+                    SELECT pid
+                    FROM pg_replication_slots s
+                    JOIN pg_stat_activity a ON s.active_pid = a.pid
+                    WHERE slot_name = %s;
+                    """,
+                    (self.slot_name,),
+                )
+                active_pid = cur.fetchone()
+                return active_pid[0] if active_pid else None  # type: ignore[no-any-return]
+
+        def terminate_pid(pid: int) -> None:
+            with _get_cursor(self.credentials) as cur:
+                cur.execute("SELECT pg_terminate_backend(%s);", (pid,))
+
+        pid = find_active_pid_for_slot()
+        if pid is None:
+            return
+
+        logger.warning(
+            "Orphaned replication process found for slot '%s' (pid=%s)",
+            self.slot_name,
+            pid,
+        )
+        from time import sleep
+
+        sleep(10)
+        if pid_after_wait := find_active_pid_for_slot():
+            logger.warning(
+                "Terminating orphaned replication process for slot '%s' (pid=%s)",
+                self.slot_name,
+                pid_after_wait,
+            )
+            terminate_pid(pid_after_wait)
 
 
 @dataclass

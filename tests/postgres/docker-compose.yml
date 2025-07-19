@@ -5,6 +5,10 @@ services:
       context: postgres
       dockerfile: Dockerfile
     container_name: dlt_postgres_db
+    command:
+    - postgres
+    - -c
+    - log_statement=all
     restart: unless-stopped
     volumes:
       - db_home:/var/lib/postgresql/data
