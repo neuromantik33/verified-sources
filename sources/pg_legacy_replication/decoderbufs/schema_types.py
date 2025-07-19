@@ -10,22 +10,20 @@ from dlt.common.data_types.typing import TDataType
 from dlt.common.schema.typing import TColumnSchema, TColumnType
 from dlt.destinations.impl.postgres.factory import PostgresTypeMapper
 
+from ..helpers import epoch_days_to_date, epoch_micros_to_datetime, microseconds_to_time
 from .pg_logicaldec_pb2 import DatumMessage, TypeInfo
 
-_DUMMY_VALS: Dict[TDataType, Any] = {
-    "bigint": 0,
-    "binary": b" ",
-    "bool": True,
-    "json": [0],
-    "date": pendulum.Date(1970, 1, 1),
-    "decimal": Decimal(0),
-    "double": 0.0,
-    "text": "",
-    "time": pendulum.Time(),
-    "timestamp": pendulum.from_timestamp(0),
-    "wei": 0,
-}
-"""Dummy values used to replace NULLs in NOT NULL columns in key-only delete records."""
+
+def to_dlt_column_schema(
+    col_name: str, datum: DatumMessage, type_info: TypeInfo
+) -> TColumnSchema:
+    """Converts decoderbuf's datum value/typeinfo to dlt column schema."""
+    return TColumnSchema(
+        name=col_name,
+        nullable=type_info.value_optional,
+        **_to_dlt_column_type(datum.column_type, type_info.modifier),
+    )
+
 
 _PG_TYPES: Dict[int, str] = {
     16: "boolean",
@@ -53,18 +51,38 @@ _MISSING_TYPES: Dict[str, TDataType] = {
     "text": "text",
     "timestamp without time zone": "timestamp",
 }
+
+
 # FIXME Missing types for old postgres versions
 
-_DATUM_RAW_TYPES: Dict[str, TDataType] = {
-    "datum_int32": "bigint",
-    "datum_int64": "bigint",
-    "datum_float": "double",
-    "datum_double": "double",
-    "datum_bool": "bool",
-    "datum_string": "text",
-    "datum_bytes": "binary",
-}
-"""Maps decoderbuf's datum msg type to dlt type."""
+
+def _to_dlt_column_type(type_id: int, modifier: str) -> TColumnType:
+    """
+    Converts postgres type OID to dlt column type.
+
+    Type OIDs not in _PG_TYPES mapping default to "text" type.
+    """
+    pg_type = _PG_TYPES.get(type_id)
+    if pg_type in _MISSING_TYPES:
+        return {"data_type": _MISSING_TYPES[pg_type]}
+    if modifier.endswith("[]"):
+        return {"data_type": "json"}
+    if pg_type is None:
+        logger.warning(
+            "No type found for type_id '%s' and modifier '%s'", type_id, modifier
+        )
+        pg_type = "character varying"
+
+    precision, scale = _get_precision_and_scale(type_id, modifier)
+    return _type_mapper().from_destination_type(pg_type, precision, scale)
+
+
+@lru_cache(maxsize=None)
+def _type_mapper() -> PostgresTypeMapper:
+    from dlt.destinations import postgres
+
+    return PostgresTypeMapper(postgres().capabilities())
+
 
 _FIXED_PRECISION_TYPES: Dict[int, Tuple[int, Optional[int]]] = {
     21: (32, None),  # smallint
@@ -103,66 +121,41 @@ def _get_precision_and_scale(
     return None, None
 
 
-@lru_cache(maxsize=None)
-def _type_mapper() -> PostgresTypeMapper:
-    from dlt.destinations import postgres
-
-    return PostgresTypeMapper(postgres().capabilities())
-
-
-def _to_dlt_column_type(type_id: int, modifier: str) -> TColumnType:
-    """
-    Converts postgres type OID to dlt column type.
-
-    Type OIDs not in _PG_TYPES mapping default to "text" type.
-    """
-    pg_type = _PG_TYPES.get(type_id)
-    if pg_type in _MISSING_TYPES:
-        return {"data_type": _MISSING_TYPES[pg_type]}
-    if modifier.endswith("[]"):
-        return {"data_type": "json"}
-    if pg_type is None:
-        logger.warning(
-            "No type found for type_id '%s' and modifier '%s'", type_id, modifier
-        )
-        pg_type = "character varying"
-
-    precision, scale = _get_precision_and_scale(type_id, modifier)
-    return _type_mapper().from_destination_type(pg_type, precision, scale)
-
-
-def _to_dlt_column_schema(
-    col_name: str, datum: DatumMessage, type_info: TypeInfo
-) -> TColumnSchema:
-    """Converts decoderbuf's datum value/typeinfo to dlt column schema."""
-    return {
-        "name": col_name,
-        "nullable": type_info.value_optional,
-        **_to_dlt_column_type(datum.column_type, type_info.modifier),
-    }
-
-
-def _epoch_micros_to_datetime(microseconds_since_1970: int) -> pendulum.DateTime:
-    return pendulum.from_timestamp(microseconds_since_1970 / 1_000_000)
-
-
-def _microseconds_to_time(microseconds: int) -> pendulum.Time:
-    return pendulum.Time().add(microseconds=microseconds)
-
-
-def _epoch_days_to_date(epoch_days: int) -> pendulum.Date:
-    return pendulum.Date(1970, 1, 1).add(days=epoch_days)
-
+_DUMMY_VALS: Dict[TDataType, Any] = {
+    "bigint": 0,
+    "binary": b" ",
+    "bool": True,
+    "json": [0],
+    "date": pendulum.Date(1970, 1, 1),
+    "decimal": Decimal(0),
+    "double": 0.0,
+    "text": "",
+    "time": pendulum.Time(),
+    "timestamp": pendulum.from_timestamp(0),
+    "wei": 0,
+}
+"""Dummy values used to replace NULLs in NOT NULL columns in key-only delete records."""
 
 data_type_handlers: Dict[TDataType, Callable[[Any], Any]] = {
-    "date": _epoch_days_to_date,
-    "time": _microseconds_to_time,
-    "timestamp": _epoch_micros_to_datetime,
+    "date": epoch_days_to_date,
+    "time": microseconds_to_time,
+    "timestamp": epoch_micros_to_datetime,
 }
 """Dispatch table for type conversions"""
 
+_DATUM_RAW_TYPES: Dict[str, TDataType] = {
+    "datum_int32": "bigint",
+    "datum_int64": "bigint",
+    "datum_float": "double",
+    "datum_double": "double",
+    "datum_bool": "bool",
+    "datum_string": "text",
+    "datum_bytes": "binary",
+}
+"""Maps decoderbuf's datum msg type to dlt type."""
 
-def _to_dlt_val(
+
+def to_dlt_val(
     val: DatumMessage, col_schema: TColumnSchema, *, for_delete: bool = False
 ) -> Any:
     """Converts decoderbuf's datum value into dlt-compatible data value."""
@@ -184,6 +177,13 @@ def _to_dlt_val(
         return _pg_array_to_json_array(raw_value)
 
     return coerce_value(data_type, raw_type, raw_value)
+
+
+def _get_datum_attr(val: DatumMessage) -> Optional[str]:
+    datum = val.WhichOneof("datum")
+    if datum is None or datum == "datum_missing":
+        return None
+    return datum
 
 
 def _is_scalar_pg_array(data_type: TDataType, raw_value: bytes) -> bool:
@@ -208,10 +208,3 @@ def _pg_array_to_json_array(raw_value: bytes) -> List[Any]:
             return x
 
     return [safe_load(x) for x in without_braces.split(",")]
-
-
-def _get_datum_attr(val: DatumMessage) -> Optional[str]:
-    datum = val.WhichOneof("datum")
-    if datum is None or datum == "datum_missing":
-        return None
-    return datum

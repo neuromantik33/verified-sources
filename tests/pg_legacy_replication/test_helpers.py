@@ -4,12 +4,10 @@ from dlt.common.typing import TDataItem
 from google.protobuf.json_format import ParseDict as parse_dict
 
 from sources.pg_legacy_replication import ReplicationOptions
-from sources.pg_legacy_replication.helpers import (
-    compare_schemas,
-    gen_data_item,
-    infer_table_schema,
-)
-from sources.pg_legacy_replication.pg_logicaldec_pb2 import Op, RowMessage
+from sources.pg_legacy_replication.decoderbufs import gen_data_item, infer_table_schema
+from sources.pg_legacy_replication.decoderbufs.pg_logicaldec_pb2 import Op, RowMessage
+from sources.pg_legacy_replication.helpers import compare_schemas
+
 from .cases import (
     DATA_ITEMS,
     ROW_MESSAGES,

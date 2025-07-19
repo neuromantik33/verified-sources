@@ -1,7 +1,16 @@
 """Replicates postgres tables in batch using logical decoding."""
-
 from collections import defaultdict
-from typing import Any, Callable, Iterable, Mapping, Optional, Sequence, Union
+from typing import (
+    Any,
+    Callable,
+    Iterable,
+    Literal,
+    Mapping,
+    Optional,
+    Sequence,
+    Union,
+    Type,
+)
 
 import dlt
 from dlt.extract import DltResource
@@ -11,7 +20,7 @@ from dlt.sources.sql_database import sql_table
 
 from .helpers import (
     BackendHandler,
-    ItemGenerator,
+    MessageConsumer,
     ReplicationOptions,
     SqlTableOptions,
     advance_slot,
@@ -23,6 +32,8 @@ from .helpers import (
     get_rep_conn,
 )
 
+TReplicationPlugin = Literal["decoderbufs"]
+
 
 @dlt.source
 def replication_source(
@@ -30,6 +41,7 @@ def replication_source(
     schema: str,
     table_names: Union[str, Sequence[str]],
     credentials: ConnectionStringCredentials = dlt.secrets.value,
+    repl_plugin: TReplicationPlugin = "decoderbufs",
     repl_options: Optional[Mapping[str, ReplicationOptions]] = None,
     target_batch_size: int = 1000,
     flush_slot: bool = True,
@@ -99,23 +111,15 @@ def replication_source(
             return
 
         table_qnames = {f"{schema}.{table_name}" for table_name in table_names}
-
-        # generate items in batches
-        while True:
-            gen = ItemGenerator(
-                credentials=credentials,
-                slot_name=slot_name,
-                table_qnames=table_qnames,
-                upto_lsn=upto_lsn,
-                start_lsn=start_lsn,
-                repl_options=repl_options,
-                target_batch_size=target_batch_size,
-            )
-            yield from gen
-            if gen.generated_all:
-                dlt.current.resource_state()["last_commit_lsn"] = gen.last_commit_lsn
-                break
-            start_lsn = gen.last_commit_lsn
+        consumer_type = _get_consumer_impl_class(repl_plugin)
+        consumer = consumer_type(
+            credentials=credentials,
+            table_qnames=table_qnames,
+            repl_options=repl_options,
+            target_batch_size=target_batch_size,
+        )
+        for batch in consumer.read_wal(slot_name, start_lsn, upto_lsn):
+            yield batch
 
     wal_reader = replication_resource(slot_name)
 
@@ -141,6 +145,7 @@ def _create_table_dispatch(
 def init_replication(
     slot_name: str,
     schema: str,
+    repl_plugin: TReplicationPlugin = "decoderbufs",
     table_names: Optional[Union[str, Sequence[str]]] = None,
     credentials: ConnectionStringCredentials = dlt.secrets.value,
     take_snapshots: bool = False,
@@ -185,7 +190,7 @@ def init_replication(
     with rep_conn.cursor() as rep_cur:
         if reset:
             drop_replication_slot(slot_name, rep_cur)
-        slot = create_replication_slot(slot_name, rep_cur)
+        slot = create_replication_slot(slot_name, rep_cur, repl_plugin)
 
     # Close connection if no snapshots are needed
     if not take_snapshots:
@@ -203,6 +208,24 @@ def init_replication(
     for table in table_names:
         table_args = (table_options or {}).get(table, {}).copy()
         yield sql_table(credentials=engine, table=table, schema=schema, **table_args)
+
+
+def _get_consumer_impl_class(
+    repl_plugin: TReplicationPlugin,
+) -> Type[MessageConsumer]:
+    from dlt.common.exceptions import MissingDependencyException
+
+    if repl_plugin == "decoderbufs":
+        try:
+            import google.protobuf
+            from .decoderbufs import DecoderbufsConsumer
+        except ModuleNotFoundError:
+            raise MissingDependencyException(
+                "pg_legacy_replcation", ["protobuf", "psycopg2", "sqlalchemy"]
+            )
+        return DecoderbufsConsumer
+    else:
+        raise ValueError(f"Unimplemented replication plugin: {repl_plugin}")
 
 
 __all__ = [
