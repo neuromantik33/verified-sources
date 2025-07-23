@@ -1,9 +1,9 @@
-from typing import Sequence, List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 import dlt
 from dlt import Pipeline
-from dlt.common.data_writers.escape import escape_postgres_identifier
 from dlt.common.configuration.specs import ConnectionStringCredentials
+from dlt.common.data_writers.escape import escape_postgres_identifier
 
 from tests.utils import select_data
 

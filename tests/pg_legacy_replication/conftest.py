@@ -1,9 +1,8 @@
 import faulthandler
-import pytest
-
 from typing import Iterator, Tuple
 
 import dlt
+import pytest
 from dlt.common.utils import uniq_id
 
 

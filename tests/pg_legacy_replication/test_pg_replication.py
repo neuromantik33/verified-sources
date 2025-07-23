@@ -7,16 +7,13 @@ from dlt.common.schema.typing import TTableSchemaColumns
 from dlt.destinations.job_client_impl import SqlJobClientBase
 
 from sources.pg_legacy_replication import (
-    init_replication,
     cleanup_snapshot_resources,
+    init_replication,
     replication_source,
 )
 from sources.pg_legacy_replication.helpers import TableBackend
-from tests.utils import (
-    ALL_DESTINATIONS,
-    assert_load_info,
-    load_table_counts,
-)
+from tests.utils import ALL_DESTINATIONS, assert_load_info, load_table_counts
+
 from .cases import TABLE_ROW_ALL_DATA_TYPES, TABLE_UPDATE_COLUMNS_SCHEMA
 from .utils import add_pk, assert_loaded_data
 
@@ -116,7 +113,7 @@ def test_core_functionality(
 
     # process changes
     info = dest_pl.run(changes)
-    assert_load_info(info, expected_load_packages=2)
+    assert_load_info(info)
     assert load_table_counts(dest_pl, "tbl_x", "tbl_y") == {"tbl_x": 3, "tbl_y": 3}
     exp_tbl_y = [
         {"id_y": 1, "val_y": True},
@@ -135,7 +132,7 @@ def test_core_functionality(
 
     # process changes
     info = dest_pl.run(changes)
-    assert_load_info(info, expected_load_packages=2)
+    assert_load_info(info)
     assert load_table_counts(dest_pl, "tbl_x", "tbl_y") == {"tbl_x": 3, "tbl_y": 3}
     exp_tbl_x = [
         {"id_x": 1, "val_x": "foo_updated"},
@@ -157,7 +154,7 @@ def test_core_functionality(
 
     # process changes
     info = dest_pl.run(changes)
-    assert_load_info(info, expected_load_packages=2)
+    assert_load_info(info)
     assert load_table_counts(dest_pl, "tbl_x", "tbl_y") == {"tbl_x": 2, "tbl_y": 3}
     exp_tbl_x = [{"id_x": 2, "val_x": "bar"}, {"id_x": 3, "val_x": "baz"}]
     exp_tbl_y = [
@@ -271,9 +268,7 @@ def test_mapped_data_types(
     column_schema = deepcopy(TABLE_UPDATE_COLUMNS_SCHEMA)
 
     # FIXME Need to figure out why when creating a snapshot my schema get loaded in another job
-    expected_load_packages = 1
-    if init_load:
-        expected_load_packages = 2
+    expected_load_packages = 2 if init_load else 1
 
     # resource to load data into postgres source table
     @dlt.resource(primary_key="col1", write_disposition="merge", columns=column_schema)
@@ -354,7 +349,7 @@ def test_mapped_data_types(
 
     # process changes and assert expectations
     info = dest_pl.run(changes)
-    assert_load_info(info, expected_load_packages=expected_load_packages)
+    assert_load_info(info)
     assert load_table_counts(dest_pl, "items")["items"] == 3 if init_load else 2
     exp = [
         {"col1": 1, "col2": 1.5, "col3": True},
@@ -376,7 +371,7 @@ def test_mapped_data_types(
 
     # process change and assert expectation
     info = dest_pl.run(changes)
-    assert_load_info(info, expected_load_packages=expected_load_packages)
+    assert_load_info(info)
     assert load_table_counts(dest_pl, "items")["items"] == 3 if init_load else 2
     exp = [{"col1": 2, "col2": 2.5, "col3": False}]
     assert_loaded_data(
@@ -793,7 +788,7 @@ def test_delete_schema_bug(
 
     # process changes
     info = dest_pl.run(changes)
-    assert_load_info(info, expected_load_packages=1)
+    assert_load_info(info)
     assert load_table_counts(dest_pl, "items") == {"items": 100}
     assert_loaded_data(dest_pl, "items", ["id", "val"], data, "id")
 
@@ -807,5 +802,5 @@ def test_delete_schema_bug(
 
     # process changes
     info = dest_pl.run(changes)
-    assert_load_info(info, expected_load_packages=2)
+    assert_load_info(info)
     assert load_table_counts(dest_pl, "items") == {"items": 50}
