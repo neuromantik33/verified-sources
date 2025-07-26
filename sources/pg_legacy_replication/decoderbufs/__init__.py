@@ -13,15 +13,17 @@ from psycopg2.extras import ReplicationMessage
 
 from .pg_logicaldec_pb2 import DatumMessage, Op, RowMessage, TypeInfo
 from .schema_types import to_dlt_column_schema, to_dlt_val
-from ..helpers import (
+from ..consumer import (
     MessageConsumer,
     ReplicationOptions,
     TableItems,
     add_replication_columns,
+    read_message,
+)
+from ..helpers import (
     compare_schemas,
     epoch_micros_to_datetime,
     get_rep_conn,
-    read_message,
 )
 
 log = getLogger(__name__)
