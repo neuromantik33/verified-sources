@@ -18,10 +18,8 @@ from dlt.extract.items import TDataItem
 from dlt.sources.credentials import ConnectionStringCredentials
 from dlt.sources.sql_database import sql_table
 
+from .consumer import BackendHandler, MessageConsumer, ReplicationOptions
 from .helpers import (
-    BackendHandler,
-    MessageConsumer,
-    ReplicationOptions,
     SqlTableOptions,
     advance_slot,
     cleanup_snapshot_resources,
@@ -30,6 +28,7 @@ from .helpers import (
     drop_replication_slot,
     get_max_lsn,
     get_rep_conn,
+    get_replication_slot,
 )
 
 TReplicationPlugin = Literal["decoderbufs"]
@@ -187,22 +186,19 @@ def init_replication(
         - When `take_snapshots` is `True`, the function configures a snapshot isolation level for consistent table snapshots.
     """
     rep_conn = get_rep_conn(credentials)
-    with rep_conn.cursor() as rep_cur:
-        if reset:
-            drop_replication_slot(slot_name, rep_cur)
-        slot = create_replication_slot(slot_name, rep_cur, repl_plugin)
+    slot = get_replication_slot(slot_name, credentials, repl_plugin)
+    if slot is None:
+        with rep_conn.cursor() as cur:
+            slot = create_replication_slot(slot_name, cur, repl_plugin)
 
     # Close connection if no snapshots are needed
     if not take_snapshots:
         rep_conn.close()
         return
 
+    engine = configure_engine(credentials, rep_conn, slot.get("snapshot_name"))
+
     assert table_names is not None
-
-    engine = configure_engine(
-        credentials, rep_conn, slot.get("snapshot_name") if slot else None
-    )
-
     table_names = [table_names] if isinstance(table_names, str) else table_names or []
 
     for table in table_names:
