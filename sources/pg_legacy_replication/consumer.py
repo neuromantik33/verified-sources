@@ -24,12 +24,10 @@ from dlt.common.schema.utils import merge_column
 from dlt.common.typing import TDataItem
 from dlt.extract.items import DataItemWithMeta
 from dlt.sources.credentials import ConnectionStringCredentials
-from dlt.sources.sql_database import (
-    ReflectionLevel,
-    TableBackend,
-    arrow_helpers as arrow,
-)
+from dlt.sources.sql_database import ReflectionLevel, TableBackend
+from dlt.sources.sql_database import arrow_helpers as arrow
 from psycopg2.extras import ReplicationCursor, ReplicationMessage
+
 from .exceptions import NoMessageException
 
 log = getLogger(__name__)
@@ -65,11 +63,11 @@ class MessageConsumer(ABC):
         self.target_batch_size = target_batch_size
         self.repl_options = repl_options
 
-        # maps table qnames to list of data items
+        # maps table names to list of data items
         self.data_items: Dict[str, List[TDataItem]] = defaultdict(list)
-        # maps table qname to table schema
+        # maps table names to table schema
         self.last_table_schema: Dict[str, TTableSchema] = {}
-        # maps table qnames to new_typeinfo hashes
+        # maps table names to new_typeinfo hashes
         self.last_table_hashes: Dict[str, int] = {}
         self.last_commit_lsn: int
 
@@ -82,9 +80,9 @@ class MessageConsumer(ABC):
     def flush_batch(
         self, cur: ReplicationCursor, write_lsn: int
     ) -> Iterator[TableItems]:
-        for table, data_items in self.data_items.items():
-            log.debug("Flushing %s events for table '%s'", len(data_items), table)
-            yield TableItems(self.last_table_schema[table], data_items)
+        for table_name, data_items in self.data_items.items():
+            log.debug("Flushing %s events for table '%s'", len(data_items), table_name)
+            yield TableItems(self.last_table_schema[table_name], data_items)
         self.clear_state()
         cur.send_feedback(write_lsn=write_lsn, reply=True, force=True)
 

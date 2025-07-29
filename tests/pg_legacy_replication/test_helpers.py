@@ -3,8 +3,7 @@ from dlt.common.schema.typing import TTableSchema
 from dlt.common.typing import TDataItem
 from google.protobuf.json_format import ParseDict as parse_dict
 
-from sources.pg_legacy_replication import ReplicationOptions
-from sources.pg_legacy_replication.decoderbufs import gen_data_item, infer_table_schema
+from sources.pg_legacy_replication.decoderbufs import gen_data_item, infer_schema_cols
 from sources.pg_legacy_replication.decoderbufs.pg_logicaldec_pb2 import Op, RowMessage
 from sources.pg_legacy_replication.helpers import compare_schemas
 
@@ -18,18 +17,17 @@ from .cases import (
 
 
 @pytest.mark.parametrize("data, expected_schema", zip(ROW_MESSAGES, TABLE_SCHEMAS))
-def test_infer_table_schema(
+def test_infer_table_schema_cols(
     data,
     expected_schema: TTableSchema,
 ):
     row_msg = RowMessage()
     parse_dict(data, row_msg)
-    options = ReplicationOptions(include_commit_ts=True, include_tx_id=True)
     if row_msg.op == Op.DELETE:
         with pytest.raises(AssertionError):
-            infer_table_schema(row_msg, options)
+            infer_schema_cols(row_msg)
     else:
-        assert infer_table_schema(row_msg, options) == expected_schema
+        assert infer_schema_cols(row_msg) == expected_schema["columns"]
 
 
 @pytest.mark.parametrize(

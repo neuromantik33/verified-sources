@@ -3,16 +3,11 @@ from contextlib import closing
 from logging import getLogger
 from typing import Any, DefaultDict, Iterator, Optional, Sequence, Set, Tuple
 
-from dlt.common.libs.sql_alchemy import MetaData, Table
-from dlt.common.schema.typing import TColumnSchema, TTableSchema, TTableSchemaColumns
+from dlt.common.schema.typing import TTableSchema, TTableSchemaColumns
 from dlt.common.typing import TDataItem
 from dlt.sources.credentials import ConnectionStringCredentials
-from dlt.sources.sql_database import engine_from_credentials
-from dlt.sources.sql_database.schema_types import ColumnAny, sqla_col_to_column_schema
 from psycopg2.extras import ReplicationMessage
 
-from .pg_logicaldec_pb2 import DatumMessage, Op, RowMessage, TypeInfo
-from .schema_types import to_dlt_column_schema, to_dlt_val
 from ..consumer import (
     MessageConsumer,
     ReplicationOptions,
@@ -24,7 +19,10 @@ from ..helpers import (
     compare_schemas,
     epoch_micros_to_datetime,
     get_rep_conn,
+    reflect_schema_cols,
 )
+from .pg_logicaldec_pb2 import DatumMessage, Op, RowMessage, TypeInfo
+from .schema_types import to_dlt_column_schema, to_dlt_val
 
 log = getLogger(__name__)
 
@@ -86,7 +84,7 @@ class DecoderbufsConsumer(MessageConsumer):
                             lsn,
                             **self.repl_options[table_name],
                         )
-                        self.data_items[msg.table].append(data_item)
+                        self.data_items[table_name].append(data_item)
                 except Exception:
                     log.error(
                         "A fatal error occurred while processing a message: %s", msg
@@ -103,76 +101,49 @@ class DecoderbufsConsumer(MessageConsumer):
         """
         Given a row message, calculates or fetches a table schema.
         """
-        table_qname = msg.table
-        table_name = table_qname.split(".")[1]
-        schema_cache = self.last_table_schema
-        schema_hashes = self.last_table_hashes
+        schema_name, table_name = msg.table.split(".")
+        options = self.repl_options[table_name]
 
-        cached_schema = schema_cache.get(table_qname)
+        def build_schema_from_cols(cols: TTableSchemaColumns) -> TTableSchema:
+            return TTableSchema(
+                name=table_name,
+                columns=add_replication_columns(cols, **options),
+            )
 
-        # 1. Fast path: DELETE uses cached schema (or fetch from SQLA if missing)
+        def reflect_and_cache_schema() -> TTableSchema:
+            cols = reflect_schema_cols(
+                self.credentials, schema_name, table_name, **options
+            )
+            schema = build_schema_from_cols(cols)
+            self.last_table_schema[table_name] = schema
+            return schema
+
+        cached_schema = self.last_table_schema.get(table_name)
+
+        # 1. DELETEs use cached schema or reflect from DB
         if msg.op == Op.DELETE:
-            if cached_schema is None:
-                cached_schema = self._fetch_table_schema_with_sqla(table_qname)
-                schema_cache[table_qname] = cached_schema
+            return cached_schema or reflect_and_cache_schema()
+
+        # 2. If type hasn't changed, use cached schema
+        current_hash = hash_typeinfo(msg.new_typeinfo)
+        if current_hash == self.last_table_hashes.get(table_name):
             return cached_schema
 
-        # 2. Fast path: type hash matches cached
-        current_hash = hash_typeinfo(msg.new_typeinfo)
-        if current_hash == schema_hashes.get(table_qname):
-            return schema_cache[table_qname]
-
-        # 3. Infer new schema from message
-        inferred_schema = infer_table_schema(msg, self.repl_options[table_name])
-
-        if cached_schema is None:
-            # No previous schema, so cache and return the new one
-            schema_cache[table_qname] = inferred_schema
-            schema_hashes[table_qname] = current_hash
-            return inferred_schema
-
-        # 4. Compare and retain merged schema if compatible
+        # 3. Infer schema from message
+        cols = infer_schema_cols(msg, **options)
+        current_schema = build_schema_from_cols(cols)
         try:
-            merged_schema = compare_schemas(cached_schema, inferred_schema)
-            schema_cache[table_qname] = merged_schema
-            schema_hashes[table_qname] = current_hash
-            return merged_schema
+            if cached_schema is not None:
+                current_schema = compare_schemas(cached_schema, current_schema)
+
+            self.last_table_schema[table_name] = current_schema
+            self.last_table_hashes[table_name] = current_hash
+
+            return current_schema
+
         except AssertionError as e:
             log.warning(str(e))
             return None
-
-    def _fetch_table_schema_with_sqla(self, table_qname: str) -> TTableSchema:
-        """Last resort function used to fetch the table schema from the database"""
-        engine = engine_from_credentials(self.credentials)
-        schema, table_name = table_qname.split(".")
-        options = self.repl_options[table_name]
-        try:
-            metadata = MetaData(schema=schema)
-            table = Table(table_name, metadata, autoload_with=engine)
-            included_columns = options.get("included_columns")
-
-            def get_column_entry(c: ColumnAny) -> Optional[Tuple[str, TColumnSchema]]:
-                col = sqla_col_to_column_schema(
-                    c, options.get("reflection_level", "full")
-                )
-                if col is None:
-                    return None
-                if included_columns and c.name not in included_columns:
-                    return None
-                return col["name"], col
-
-            columns = dict(
-                entry
-                for c in table.columns
-                if (entry := get_column_entry(c)) is not None
-            )
-
-            return TTableSchema(
-                name=table_name,
-                columns=add_replication_columns(columns, **options),
-            )
-        finally:
-            engine.dispose()
 
 
 def decode_replication_message(
@@ -236,12 +207,16 @@ def _actual_column_name(column: DatumMessage) -> str:
     return col_name
 
 
-def infer_table_schema(msg: RowMessage, options: ReplicationOptions) -> TTableSchema:
-    """Infers the table schema from the replication message and optional hints."""
-    # Choose the correct source based on operation type
+def infer_schema_cols(
+    msg: RowMessage,
+    included_columns: Optional[Set[str]] = None,
+    **_: Any,
+) -> TTableSchemaColumns:
+    """
+    Infers the table schema columns from the replication message and optional hints.
+    """
     assert msg.op != Op.DELETE
-    included_columns = options.get("included_columns")
-    columns = {
+    return {
         col_name: to_dlt_column_schema(
             col_name, datum=col, type_info=msg.new_typeinfo[i]
         )
@@ -249,11 +224,6 @@ def infer_table_schema(msg: RowMessage, options: ReplicationOptions) -> TTableSc
         if (col_name := _actual_column_name(col))
         and (not included_columns or col_name in included_columns)
     }
-
-    return TTableSchema(
-        name=msg.table.split(".")[1],
-        columns=add_replication_columns(columns, **options),
-    )
 
 
 def hash_typeinfo(new_typeinfo: Sequence[TypeInfo]) -> int:

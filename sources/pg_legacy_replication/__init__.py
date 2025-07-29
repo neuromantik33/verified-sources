@@ -8,8 +8,8 @@ from typing import (
     Mapping,
     Optional,
     Sequence,
-    Union,
     Type,
+    Union,
 )
 
 import dlt

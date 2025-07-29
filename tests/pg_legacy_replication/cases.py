@@ -401,23 +401,6 @@ TABLE_SCHEMAS: List[TTableSchema] = [
                 "name": "_dlt_load_id",
                 "nullable": False,
             },
-            "_pg_lsn": {"data_type": "bigint", "name": "_pg_lsn", "nullable": True},
-            "_pg_deleted_ts": {
-                "data_type": "timestamp",
-                "name": "_pg_deleted_ts",
-                "nullable": True,
-            },
-            "_pg_commit_ts": {
-                "data_type": "timestamp",
-                "name": "_pg_commit_ts",
-                "nullable": True,
-            },
-            "_pg_tx_id": {
-                "data_type": "bigint",
-                "name": "_pg_tx_id",
-                "nullable": True,
-                "precision": 32,
-            },
         },
     },
     {
@@ -430,23 +413,6 @@ TABLE_SCHEMAS: List[TTableSchema] = [
             "col12": {"data_type": "timestamp", "name": "col12", "nullable": True},
             "col13": {"data_type": "double", "name": "col13", "nullable": True},
             "col14": {"data_type": "text", "name": "col14", "nullable": True},
-            "_pg_lsn": {"data_type": "bigint", "name": "_pg_lsn", "nullable": True},
-            "_pg_deleted_ts": {
-                "data_type": "timestamp",
-                "name": "_pg_deleted_ts",
-                "nullable": True,
-            },
-            "_pg_commit_ts": {
-                "data_type": "timestamp",
-                "name": "_pg_commit_ts",
-                "nullable": True,
-            },
-            "_pg_tx_id": {
-                "data_type": "bigint",
-                "name": "_pg_tx_id",
-                "nullable": True,
-                "precision": 32,
-            },
         },
     },
     {
@@ -466,23 +432,6 @@ TABLE_SCHEMAS: List[TTableSchema] = [
             "col_tstz": {"data_type": "timestamp", "name": "col_tstz"},
             "col_num": {"data_type": "decimal", "name": "col_num"},
             "col_json": {"data_type": "json", "name": "col_json"},
-            "_pg_lsn": {"data_type": "bigint", "name": "_pg_lsn", "nullable": True},
-            "_pg_deleted_ts": {
-                "data_type": "timestamp",
-                "name": "_pg_deleted_ts",
-                "nullable": True,
-            },
-            "_pg_commit_ts": {
-                "data_type": "timestamp",
-                "name": "_pg_commit_ts",
-                "nullable": True,
-            },
-            "_pg_tx_id": {
-                "data_type": "bigint",
-                "name": "_pg_tx_id",
-                "nullable": True,
-                "precision": 32,
-            },
         },
     },
     {
@@ -493,23 +442,6 @@ TABLE_SCHEMAS: List[TTableSchema] = [
             "uuid_col": {"data_type": "text", "name": "uuid_col", "nullable": True},
             "text_a": {"data_type": "json", "name": "text_a", "nullable": True},
             "json_col": {"data_type": "json", "name": "json_col", "nullable": True},
-            "_pg_lsn": {"data_type": "bigint", "name": "_pg_lsn", "nullable": True},
-            "_pg_deleted_ts": {
-                "data_type": "timestamp",
-                "name": "_pg_deleted_ts",
-                "nullable": True,
-            },
-            "_pg_commit_ts": {
-                "data_type": "timestamp",
-                "name": "_pg_commit_ts",
-                "nullable": True,
-            },
-            "_pg_tx_id": {
-                "data_type": "bigint",
-                "name": "_pg_tx_id",
-                "nullable": True,
-                "precision": 32,
-            },
         },
     },
 ]
