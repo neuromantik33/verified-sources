@@ -1,27 +1,27 @@
 from contextlib import closing, contextmanager
-
-from typing import Any, Callable, Dict, Iterator, List, Optional, Set, TypedDict
+from typing import Any, Callable, Dict, Iterator, List, Optional, Set, Tuple, TypedDict
 
 import psycopg2
-from dlt.common.libs.sql_alchemy import Engine, MetaData, Table, sa
 from dlt.common import logger
+from dlt.common.libs.sql_alchemy import Engine, MetaData, Table, sa
 from dlt.common.pendulum import pendulum
 from dlt.common.schema.typing import TColumnSchema, TTableSchema, TTableSchemaColumns
 from dlt.extract import DltSource
 from dlt.sources.credentials import ConnectionStringCredentials
 from dlt.sources.sql_database import (
-    ReflectionLevel,
     TableBackend,
     TQueryAdapter,
     TTypeAdapter,
     engine_from_credentials,
 )
-from psycopg2.extensions import connection as ConnectionExt, cursor
-from psycopg2.extras import (
-    LogicalReplicationConnection,
-    ReplicationCursor,
-    ReplicationMessage,
+from dlt.sources.sql_database.schema_types import (
+    ColumnAny,
+    ReflectionLevel,
+    sqla_col_to_column_schema,
 )
+from psycopg2.extensions import connection as ConnectionExt
+from psycopg2.extensions import cursor
+from psycopg2.extras import LogicalReplicationConnection, ReplicationCursor
 
 
 class SqlTableOptions(TypedDict, total=False):
@@ -242,6 +242,38 @@ def microseconds_to_time(microseconds: int) -> pendulum.Time:
 
 def epoch_days_to_date(epoch_days: int) -> pendulum.Date:
     return pendulum.Date(1970, 1, 1).add(days=epoch_days)
+
+
+# Schema helpers
+def reflect_schema_cols(
+    credentials: ConnectionStringCredentials,
+    schema: str,
+    table_name: str,
+    included_columns: Optional[Set[str]] = None,
+    reflection_level: ReflectionLevel = "full",
+    **_: Any,
+) -> TTableSchemaColumns:
+    """
+    Last resort function used to fetch the table schema columns directly from the database.
+    """
+    engine = engine_from_credentials(credentials)
+    try:
+        metadata = MetaData(schema=schema)
+        table = Table(table_name, metadata, autoload_with=engine)
+
+        def get_column_entry(c: ColumnAny) -> Optional[Tuple[str, TColumnSchema]]:
+            col = sqla_col_to_column_schema(c, reflection_level)
+            if col is None:
+                return None
+            if included_columns and c.name not in included_columns:
+                return None
+            return col["name"], col
+
+        return dict(
+            entry for c in table.columns if (entry := get_column_entry(c)) is not None
+        )
+    finally:
+        engine.dispose()
 
 
 ALLOWED_COL_SCHEMA_FIELDS: Set[str] = {
