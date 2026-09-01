@@ -295,6 +295,11 @@ ROW_MESSAGES: List[dict] = [
                 "columnType": 114,
                 "datum_string": '{"a":[null,1]}',
             },
+            {
+                "columnName": "large_ts_col",
+                "columnType": 1114,
+                "datumInt64": 487129330800000000,
+            },
         ],
         "newTypeinfo": [
             {
@@ -316,6 +321,10 @@ ROW_MESSAGES: List[dict] = [
             {
                 "modifier": "json",
                 "valueOptional": True,
+            },
+            {
+                "modifier": "timestamp without time zone",
+                "valueOptional": True
             },
         ],
         "oldTuple": [],
@@ -377,6 +386,8 @@ DATA_ITEMS: List[TDataItem] = [
         "uuid_col": "6e1f5de1-1093-4bfe-98e4-62ac56b2db54",
         "text_a": ["Network administration", "GNS3", "BGP"],
         "json_col": {"a": [None, 1]},
+        # DateTime(9999, 12, 31, 23, 59, 59, tzinfo=Timezone('UTC'))
+        "large_ts_col": pendulum.parse("9999-12-31T23:59:59Z"),
         "_pg_lsn": 1,
         "_pg_commit_ts": pendulum.parse("2025-01-14T16:58:12.023448+00:00"),
         "_pg_tx_id": 754,
@@ -493,6 +504,7 @@ TABLE_SCHEMAS: List[TTableSchema] = [
             "uuid_col": {"data_type": "text", "name": "uuid_col", "nullable": True},
             "text_a": {"data_type": "json", "name": "text_a", "nullable": True},
             "json_col": {"data_type": "json", "name": "json_col", "nullable": True},
+            "large_ts_col": {"data_type": "timestamp", "name": "large_ts_col", "nullable": True},
             "_pg_lsn": {"data_type": "bigint", "name": "_pg_lsn", "nullable": True},
             "_pg_deleted_ts": {
                 "data_type": "timestamp",

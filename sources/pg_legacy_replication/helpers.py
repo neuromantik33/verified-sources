@@ -89,7 +89,7 @@ def configure_engine(
         snapshot_name (str, optional): This is used during the initial first table snapshot allowing
             all transactions to run with the same consistent snapshot.
     """
-    engine: Engine = engine_from_credentials(credentials)
+    engine: Engine = engine_from_credentials(credentials, pool_size=10, max_overflow=-1)
     engine.execution_options(stream_results=True, max_row_buffer=2 * 50000)
     setattr(engine, "rep_conn", rep_conn)  # noqa
 
@@ -103,7 +103,7 @@ def configure_engine(
             )
         else:
             cur.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ;")
-            cur.execute("SET TRANSACTION SNAPSHOT %s;", (snapshot_name,))
+            cur.execute(f"SET TRANSACTION SNAPSHOT '{snapshot_name}';")
 
     @sa.event.listens_for(engine, "engine_disposed")
     def on_engine_disposed(e: Engine) -> None:

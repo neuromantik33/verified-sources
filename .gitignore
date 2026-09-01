@@ -138,3 +138,5 @@ secrets.toml
 # temp
 tmp
 **/tmp
+mise.toml
+poetry.toml
