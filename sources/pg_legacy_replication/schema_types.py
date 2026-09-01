@@ -141,8 +141,10 @@ def _to_dlt_column_schema(
         **_to_dlt_column_type(datum.column_type, type_info.modifier),
     }
 
-
+MAX_MICROSECONDS = 253402300799.0 * 1_000_000
 def _epoch_micros_to_datetime(microseconds_since_1970: int) -> pendulum.DateTime:
+    if microseconds_since_1970 > MAX_MICROSECONDS:
+        microseconds_since_1970 = MAX_MICROSECONDS
     return pendulum.from_timestamp(microseconds_since_1970 / 1_000_000)
 
 
