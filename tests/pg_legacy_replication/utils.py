@@ -8,6 +8,17 @@ from dlt.common.configuration.specs import ConnectionStringCredentials
 from tests.utils import select_data
 
 
+def apply_legacy_dedup_sort(resource, pg_version: int, column_name: str) -> None:
+    """Sorts merge dedup by primary key on Postgres < 10.
+
+    The pg9.6 work added this because the default `_pg_lsn` dedup sort left these
+    tables in an unstable order. Nobody chased down why. On 10 and later the
+    default sort passes, so this does nothing there.
+    """
+    if pg_version < 100000:
+        resource.apply_hints(columns={column_name: {"dedup_sort": "asc"}})
+
+
 def add_pk(sql_client, table_name: str, column_name: str) -> None:
     """Adds primary key to postgres table.
 

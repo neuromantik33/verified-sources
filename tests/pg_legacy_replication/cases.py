@@ -324,7 +324,7 @@ ROW_MESSAGES: List[dict] = [
             },
             {
                 "modifier": "timestamp without time zone",
-                "valueOptional": True
+                "valueOptional": True,
             },
         ],
         "oldTuple": [],
@@ -504,7 +504,11 @@ TABLE_SCHEMAS: List[TTableSchema] = [
             "uuid_col": {"data_type": "text", "name": "uuid_col", "nullable": True},
             "text_a": {"data_type": "json", "name": "text_a", "nullable": True},
             "json_col": {"data_type": "json", "name": "json_col", "nullable": True},
-            "large_ts_col": {"data_type": "timestamp", "name": "large_ts_col", "nullable": True},
+            "large_ts_col": {
+                "data_type": "timestamp",
+                "name": "large_ts_col",
+                "nullable": True,
+            },
             "_pg_lsn": {"data_type": "bigint", "name": "_pg_lsn", "nullable": True},
             "_pg_deleted_ts": {
                 "data_type": "timestamp",

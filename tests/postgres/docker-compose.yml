@@ -1,19 +1,52 @@
+# Postgres test instance for the replication sources.
+#
+# PG_VERSION picks the major version:
+#   PG_VERSION=9.6 docker compose up -d --wait   # pre-10
+#   PG_VERSION=14  docker compose up -d --wait   # post-10
+#
+# Any debezium/postgres tag works, 9.6 through 17. Each version gets its own
+# compose project, so switching majors never lands on the other one's data
+# directory.
+name: dlt-pg-${PG_VERSION:-9.6}
+
 services:
-   db:
+  db:
     env_file: postgres.env
-    build:
-      context: postgres
-      dockerfile: Dockerfile
-    container_name: dlt_postgres_db
+    # Every tag from 9.6 up ships decoderbufs prebuilt, with wal_level=logical
+    # and listen_addresses='*' already set. Nothing left to build.
+    image: debezium/postgres:${PG_VERSION:-9.6}
+    container_name: dlt_postgres_db_${PG_VERSION:-9.6}
     command:
-    - postgres
-    - -c
-    - log_statement=all
+      - postgres
+      # Flags, not a mounted postgresql.conf. A 14 conf names settings 9.6 does
+      # not have, and the server refuses to start on them.
+      - -c
+      - log_statement=all
+      - -c
+      - log_connections=on
+      - -c
+      - log_disconnections=on
+      # The debezium images cap both at 4. One test that leaks a slot then
+      # starves the rest of the suite. 10 is the stock Postgres default.
+      - -c
+      - max_replication_slots=10
+      - -c
+      - max_wal_senders=10
     restart: unless-stopped
     volumes:
       - db_home:/var/lib/postgresql/data
+      - ./postgres/01_init.sql:/docker-entrypoint-initdb.d/01_init.sql:ro
     ports:
-      - 5432:5432
+      - ${PG_PORT:-5432}:5432
+    healthcheck:
+      # -h forces TCP. The entrypoint runs a temporary socket-only server while
+      # it initialises, so a socket probe goes healthy before 01_init.sql has
+      # run and dlt_data exists. The TCP listener starts only once init is done.
+      test:
+        ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 2s
+      timeout: 5s
+      retries: 45
 
 volumes:
   db_home:

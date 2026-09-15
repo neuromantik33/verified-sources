@@ -1,5 +1,14 @@
-.PHONY: install-poetry has-poetry dev lint test
+.PHONY: install-poetry has-poetry dev lint test pg-up pg-down test-pg-replication
 .SILENT:has-poetry
+
+# Postgres major version the replication tests run against. Any debezium/postgres
+# tag works, 9.6 through 17. 9.6 is the default because it hits the pre-10 paths.
+PG_VERSION ?= 9.6
+export PG_VERSION
+
+PG_COMPOSE = docker compose -f tests/postgres/docker-compose.yml
+PG_TEST_ENV = ALL_DESTINATIONS='["duckdb", "postgres"]' \
+	DESTINATION__POSTGRES__CREDENTIALS=postgresql://loader:loader@localhost:5432/dlt_data
 
 help:
 	@echo "make"
@@ -48,4 +57,16 @@ test:
 	poetry run pytest tests
 
 test-local:
-	ALL_DESTINATIONS='["duckdb", "postgres"]' DESTINATION__POSTGRES__CREDENTIALS=postgresql://loader:loader@localhost:5432/dlt_data poetry run pytest tests
+	$(PG_TEST_ENV) poetry run pytest tests
+
+pg-up:
+	$(PG_COMPOSE) up -d --wait
+
+pg-down:
+	$(PG_COMPOSE) down -v
+
+# Runs the replication tests against PG_VERSION, e.g.
+#   make test-pg-replication                  # 9.6
+#   make test-pg-replication PG_VERSION=14
+test-pg-replication: pg-up
+	$(PG_TEST_ENV) poetry run pytest tests/pg_legacy_replication

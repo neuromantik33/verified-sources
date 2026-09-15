@@ -12,6 +12,23 @@ def pytest_configure():
 
 
 @pytest.fixture()
+def pg_version(src_config: Tuple[dlt.Pipeline, str]) -> int:
+    """Server version of the Postgres under test, e.g. 90624 or 140012.
+
+    This asks the same connection the test uses instead of reading PG_VERSION.
+    PG_VERSION only picks the docker image; if the container up is not the one it
+    names, the tests still branch on what they are actually talking to.
+    """
+    src_pl, _ = src_config
+    with src_pl.sql_client() as c:
+        return int(
+            c.execute_sql(
+                "SELECT setting FROM pg_settings WHERE name = 'server_version_num';"
+            )[0][0]
+        )
+
+
+@pytest.fixture()
 def src_config() -> Iterator[Tuple[dlt.Pipeline, str]]:
     # random slot to enable parallel runs
     slot = "test_slot_" + uniq_id(4)

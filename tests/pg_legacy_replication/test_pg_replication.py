@@ -18,7 +18,7 @@ from tests.utils import (
     load_table_counts,
 )
 from .cases import TABLE_ROW_ALL_DATA_TYPES, TABLE_UPDATE_COLUMNS_SCHEMA
-from .utils import add_pk, assert_loaded_data
+from .utils import add_pk, apply_legacy_dedup_sort, assert_loaded_data
 
 merge_hints: TTableSchemaColumns = {
     "_pg_deleted_ts": {"hard_delete": True},
@@ -29,7 +29,10 @@ merge_hints: TTableSchemaColumns = {
 @pytest.mark.parametrize("destination_name", ALL_DESTINATIONS)
 @pytest.mark.parametrize("backend", ["sqlalchemy", "pyarrow"])
 def test_core_functionality(
-    src_config: Tuple[dlt.Pipeline, str], destination_name: str, backend: TableBackend
+    src_config: Tuple[dlt.Pipeline, str],
+    destination_name: str,
+    backend: TableBackend,
+    pg_version: int,
 ) -> None:
     @dlt.resource(write_disposition="merge", primary_key="id_x")
     def tbl_x(data):
@@ -41,9 +44,8 @@ def test_core_functionality(
 
     src_pl, slot_name = src_config
 
-    # FIXME Hack for pg9.6
-    tbl_x.apply_hints(columns={"id_x": {"dedup_sort": "asc"}})
-    tbl_y.apply_hints(columns={"id_y": {"dedup_sort": "asc"}})
+    apply_legacy_dedup_sort(tbl_x, pg_version, "id_x")
+    apply_legacy_dedup_sort(tbl_y, pg_version, "id_y")
 
     src_pl.run(
         [
@@ -176,7 +178,10 @@ def test_core_functionality(
 @pytest.mark.parametrize("destination_name", ALL_DESTINATIONS)
 @pytest.mark.parametrize("backend", ["sqlalchemy", "pyarrow"])
 def test_without_init_load(
-    src_config: Tuple[dlt.Pipeline, str], destination_name: str, backend: TableBackend
+    src_config: Tuple[dlt.Pipeline, str],
+    destination_name: str,
+    backend: TableBackend,
+    pg_version: int,
 ) -> None:
     @dlt.resource(write_disposition="merge", primary_key="id_x")
     def tbl_x(data):
@@ -188,9 +193,8 @@ def test_without_init_load(
 
     src_pl, slot_name = src_config
 
-    # FIXME Hack for pg9.6
-    tbl_x.apply_hints(columns={"id_x": {"dedup_sort": "asc"}})
-    tbl_y.apply_hints(columns={"id_y": {"dedup_sort": "asc"}})
+    apply_legacy_dedup_sort(tbl_x, pg_version, "id_x")
+    apply_legacy_dedup_sort(tbl_y, pg_version, "id_y")
 
     # create postgres table
     # since we're skipping initial load, these records should not be in the replicated table
@@ -272,6 +276,7 @@ def test_mapped_data_types(
     give_hints: bool,
     init_load: bool,
     backend: TableBackend,
+    pg_version: int,
 ) -> None:
     """Assert common data types (the ones mapped in PostgresTypeMapper) are properly handled."""
 
@@ -290,8 +295,7 @@ def test_mapped_data_types(
 
     src_pl, slot_name = src_config
 
-    # FIXME Hack for pg9.6
-    items.apply_hints(columns={"col1": {"dedup_sort": "asc"}})
+    apply_legacy_dedup_sort(items, pg_version, "col1")
 
     # create postgres table with single record containing all data types
     src_pl.run(items(data))
@@ -426,7 +430,7 @@ def test_unmapped_data_types(
     # insert record in source table to create replication item
     with src_pl.sql_client() as c:
         c.execute_sql(
-            "INSERT INTO data_types VALUES (B'1', box '((1,1), (0,0))', uuid_generate_v4());"
+            "INSERT INTO data_types VALUES (B'1', box '((1,1), (0,0))', public.gen_random_uuid());"
         )
 
     # run destination pipeline and assert resulting data types
